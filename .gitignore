@@ -1,0 +1,17 @@
+# Environnement virtuel
+venv/
+.venv/
+env/
+
+# Fichiers de configuration sensibles
+.env
+
+# Cache Python et Pytest
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Fichiers IDE
+.vscode/
+.idea/
