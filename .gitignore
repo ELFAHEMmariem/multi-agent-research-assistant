@@ -1,19 +1,26 @@
-# Environnement virtuel
-venv/
-.venv/
-env/
-
-# Fichiers de configuration sensibles
+# Secrets
 .env
+.env.*
+!.env.example
 
-# Cache Python et Pytest
+# Python
 __pycache__/
 *.py[cod]
-*$py.class
-.pytest_cache/
+*.egg-info/
 
-# Fichiers IDE
+# Virtual environment
+.venv/
+venv/
+
+# Tests
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE
 .vscode/
 .idea/
-# Packaging Python
-*.egg-info/
+
+# OS
+.DS_Store
+Thumbs.db
