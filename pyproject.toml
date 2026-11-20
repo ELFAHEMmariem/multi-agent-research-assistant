@@ -13,6 +13,8 @@ dependencies = [  "langchain-groq",
     "python-dotenv",
     "tavily-python",
     "langgraph",
+    "redis",
+    "langgraph-checkpoint-redis",
     ]
 
 [project.optional-dependencies]
