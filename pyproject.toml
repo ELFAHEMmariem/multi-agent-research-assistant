@@ -8,10 +8,11 @@ name = "multi-agent-research-assistant"
 version = "0.1.0"
 description = "Multi-agent research assistant with Groq and LangGraph"
 requires-python = ">=3.12,<3.13"
-dependencies = [ "langchain-groq",
+dependencies = [  "langchain-groq",
     "pydantic-settings",
     "python-dotenv",
     "tavily-python",
+    "langgraph",
     ]
 
 [project.optional-dependencies]
