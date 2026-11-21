@@ -12,28 +12,27 @@ def get_token_usage(run_id: str) -> dict:
     client = get_redis_client()
 
     try:
-        data = client.hgetall(token_key(run_id))
+        values = client.hgetall(token_key(run_id))
 
         return {
             "input_tokens": int(
-                data.get("input_tokens", 0)
+                values.get("input_tokens", 0)
             ),
             "output_tokens": int(
-                data.get("output_tokens", 0)
+                values.get("output_tokens", 0)
             ),
             "total_tokens": int(
-                data.get("total_tokens", 0)
+                values.get("total_tokens", 0)
             ),
         }
-
     finally:
         client.close()
 
 
 class GroqTokenTracker(BaseCallbackHandler):
+    """Collect Groq token usage in Redis."""
 
     def __init__(self, run_id: str):
-        super().__init__()
         self.run_id = run_id
 
     def on_llm_end(self, response, **kwargs):
@@ -41,62 +40,63 @@ class GroqTokenTracker(BaseCallbackHandler):
         output_tokens = 0
         total_tokens = 0
 
-        found_usage = False
+        generations = getattr(
+            response,
+            "generations",
+            [],
+        )
 
-        for group in getattr(
-            response, "generations", []
-        ):
+        for group in generations:
             for generation in group:
                 message = getattr(
-                    generation, "message", None
+                    generation,
+                    "message",
+                    None,
                 )
 
                 if message is None:
                     continue
 
                 usage = getattr(
-                    message, "usage_metadata", None
+                    message,
+                    "usage_metadata",
+                    None,
                 ) or {}
 
-                if not usage:
-                    continue
+                if usage:
+                    input_tokens += int(
+                        usage.get("input_tokens", 0)
+                    )
+                    output_tokens += int(
+                        usage.get("output_tokens", 0)
+                    )
+                    total_tokens += int(
+                        usage.get("total_tokens", 0)
+                    )
 
-                found_usage = True
-
-                input_tokens += int(
-                    usage.get("input_tokens", 0)
-                )
-
-                output_tokens += int(
-                    usage.get("output_tokens", 0)
-                )
-
-                total_tokens += int(
-                    usage.get("total_tokens", 0)
-                )
-
-        if not found_usage:
+        if total_tokens == 0:
             llm_output = getattr(
-                response, "llm_output", None
+                response,
+                "llm_output",
+                None,
             ) or {}
 
             usage = llm_output.get(
-                "token_usage", {}
+                "token_usage",
+                {},
             ) or {}
 
             input_tokens = int(
                 usage.get("prompt_tokens", 0)
             )
-
             output_tokens = int(
                 usage.get("completion_tokens", 0)
             )
-
             total_tokens = int(
                 usage.get("total_tokens", 0)
             )
 
-        if total_tokens <= 0:
+        if total_tokens == 0:
             total_tokens = (
                 input_tokens + output_tokens
             )
@@ -109,33 +109,23 @@ class GroqTokenTracker(BaseCallbackHandler):
         try:
             key = token_key(self.run_id)
 
-            with client.pipeline(
-                transaction=True
-            ) as pipe:
-
+            with client.pipeline() as pipe:
                 pipe.hincrby(
                     key,
                     "input_tokens",
                     input_tokens,
                 )
-
                 pipe.hincrby(
                     key,
                     "output_tokens",
                     output_tokens,
                 )
-
                 pipe.hincrby(
                     key,
                     "total_tokens",
                     total_tokens,
                 )
-
-                pipe.expire(
-                    key,
-                    7 * 24 * 3600,
-                )
-
+                pipe.expire(key, 86400 * 7)
                 pipe.execute()
 
         finally:
