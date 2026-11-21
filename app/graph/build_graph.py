@@ -1,4 +1,3 @@
-
 from langgraph.graph import StateGraph, START, END
 
 from app.graph.budgets import BudgetLimits
@@ -23,6 +22,7 @@ def build_graph(
     researcher_fn: ResearcherFn,
     writer_fn: WriterFn,
     limits: BudgetLimits | None = None,
+    checkpointer=None,
 ):
     if limits is None:
         limits = BudgetLimits()
@@ -73,4 +73,6 @@ def build_graph(
     # Final node
     builder.add_edge("writer", END)
 
-    return builder.compile()
+    return builder.compile(
+        checkpointer=checkpointer
+    )
