@@ -303,7 +303,7 @@ def supervisor_node(
                     review = reviewer_fn(
                         question_text,
                         findings,
-                        run_id or None,
+                        run_id=run_id or None,
                     )
 
                     review = (
