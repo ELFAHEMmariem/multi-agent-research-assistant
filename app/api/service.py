@@ -213,12 +213,7 @@ def get_events(
 
 def create_research_graph(checkpointer):
 
-    return build_graph(
-        planner_fn=run_planner,
-        researcher_fn=run_researcher,
-        writer_fn=run_writer,
-        checkpointer=checkpointer,
-    )
+    return build_graph(planner_fn=run_planner, researcher_fn=run_researcher, writer_fn=run_writer, checkpointer=checkpointer, use_llm_review=True)
 
 
 def graph_config(run_id: str) -> dict:

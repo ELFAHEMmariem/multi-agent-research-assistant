@@ -1,4 +1,17 @@
 
+"""
+FastAPI application for Multi-Agent Research Assistant.
+
+Endpoints:
+- GET  /health
+- POST /research
+- GET  /research/{run_id}
+- GET  /report/{run_id}
+- GET  /research/{run_id}/citations
+- GET  /research/{run_id}/trace
+- GET  /events/{run_id}
+"""
+
 import asyncio
 import json
 import logging
@@ -9,36 +22,33 @@ from fastapi import (
     FastAPI,
     HTTPException,
 )
-
 from fastapi.responses import StreamingResponse
+from redis.exceptions import RedisError
 
 from app.api.models import (
-    ResearchRequest,
-    ResearchCreated,
-    ResearchStatusResponse,
-    ResearchReportResponse,
     CitationResponse,
+    ResearchCreated,
+    ResearchReportResponse,
+    ResearchRequest,
+    ResearchStatusResponse,
 )
 
 from app.api.service import (
-    save_run,
-    get_run,
-    get_events,
     add_event,
     execute_research,
+    get_events,
     get_research_citations,
+    get_run,
+    save_run,
 )
 
-from app.persistence.redis_client import (
-    check_redis_connection,
-)
+from app.api.trace_service import get_research_trace
+from app.persistence.redis_client import check_redis_connection
+from app.schemas.trace import TraceResponse
 
 
 logger = logging.getLogger(__name__)
 
-# ==================================================
-# FASTAPI APPLICATION
-# ==================================================
 
 app = FastAPI(
     title="Multi-Agent Research Assistant API",
@@ -46,7 +56,7 @@ app = FastAPI(
         "Research API powered by Groq, Tavily, "
         "LangGraph and Redis"
     ),
-    version="0.3.0",
+    version="0.4.0",
 )
 
 
@@ -67,7 +77,6 @@ def health():
 
     try:
         redis_ok = check_redis_connection()
-
     except Exception:
         redis_ok = False
 
@@ -116,7 +125,6 @@ def create_research(
         logger.exception(
             "Failed to create research run"
         )
-
         raise HTTPException(
             status_code=503,
             detail="Research storage unavailable",
@@ -224,9 +232,7 @@ def research_citations(run_id: str):
         )
 
     try:
-        result = get_research_citations(
-            run_id
-        )
+        result = get_research_citations(run_id)
 
     except KeyError:
         raise HTTPException(
@@ -244,7 +250,57 @@ def research_citations(run_id: str):
 
 
 # ==================================================
-# 6. STREAM RESEARCH EVENTS (SSE)
+# 6. GET RESEARCH TRACE
+# ==================================================
+
+@app.get(
+    "/research/{run_id}/trace",
+    response_model=TraceResponse,
+)
+def research_trace(run_id: str):
+    """
+    Return step-level traces for a research run.
+
+    A running research can have partial traces.
+    An existing run without traces returns
+    an empty steps list.
+    """
+
+    try:
+        run = get_run(run_id)
+
+        if run is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Research run not found",
+            )
+
+        return get_research_trace(run_id)
+
+    except HTTPException:
+        raise
+
+    except RedisError:
+        logger.exception(
+            "Redis unavailable while retrieving trace"
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="Trace storage unavailable",
+        )
+
+    except Exception:
+        logger.exception(
+            "Unexpected trace retrieval error"
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to retrieve research trace",
+        )
+
+
+# ==================================================
+# 7. STREAM RESEARCH EVENTS (SSE)
 # ==================================================
 
 @app.get("/events/{run_id}")
@@ -267,7 +323,6 @@ async def stream_events(run_id: str):
 
         while True:
 
-            # Retrieve new events from Redis.
             events = await asyncio.to_thread(
                 get_events,
                 run_id,
@@ -282,10 +337,8 @@ async def stream_events(run_id: str):
                 )
 
                 yield f"data: {data}\n\n"
-
                 next_index += 1
 
-            # Retrieve the current workflow status.
             current = await asyncio.to_thread(
                 get_run,
                 run_id,
@@ -294,11 +347,8 @@ async def stream_events(run_id: str):
             if current is None:
                 break
 
-            # Stop streaming once the workflow
-            # reaches a terminal status.
             if current["status"] in TERMINAL_STATUSES:
 
-                # Retrieve any remaining events.
                 remaining = await asyncio.to_thread(
                     get_events,
                     run_id,
@@ -313,14 +363,11 @@ async def stream_events(run_id: str):
                     )
 
                     yield f"data: {data}\n\n"
-
                     next_index += 1
 
                 break
 
-            # Keep SSE connection alive.
             yield ": ping\n\n"
-
             await asyncio.sleep(1)
 
     return StreamingResponse(
