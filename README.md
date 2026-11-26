@@ -185,9 +185,6 @@ python -m pytest -q
 - Le budget de tokens est appliqué au fur et à mesure des appels ; une étape LLM peut dépasser le seuil avant que le contrôle suivant n'arrête le workflow.
 - Un run peut finir à `stopped` sans rapport disponible, notamment en cas de dépassement de budget.
 
-## Documentation technique
-
-Voir [DOCUMENTATION_TECHNIQUE.md](DOCUMENTATION_TECHNIQUE.md) pour l'architecture détaillée, les responsabilités des modules, le cycle d'exécution, la persistance, les budgets, l'API et les validations.
 
 ## Dépôt
 
