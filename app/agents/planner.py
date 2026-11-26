@@ -2,6 +2,7 @@
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.llm import get_llm
+from app.persistence.token_tracker import GroqTokenTracker
 from app.schemas.plan import ResearchPlan
 
 
@@ -20,17 +21,44 @@ Rules:
 """
 
 
-def run_planner(question: str) -> ResearchPlan:
+def run_planner(
+    question: str,
+    run_id: str | None = None,
+) -> ResearchPlan:
+    """
+    Generate a structured research plan.
+
+    When run_id is provided, track Groq token
+    consumption in Redis for the current run.
+    """
+
     llm = get_llm()
 
     structured_llm = llm.with_structured_output(
         ResearchPlan,
-        method="function_calling"
+        method="function_calling",
     )
 
-    response = structured_llm.invoke([
+    messages = [
         SystemMessage(content=PLANNER_PROMPT),
         HumanMessage(content=question),
-    ])
+    ]
+
+    if run_id:
+        tracker = GroqTokenTracker(
+            run_id=run_id,
+            agent="planner",
+        )
+
+        response = structured_llm.invoke(
+            messages,
+            config={
+                "callbacks": [tracker],
+            },
+        )
+    else:
+        response = structured_llm.invoke(
+            messages
+        )
 
     return response

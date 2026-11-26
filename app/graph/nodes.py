@@ -16,6 +16,7 @@ Each traced execution records:
 - Available token usage
 """
 
+import inspect
 import logging
 import time
 
@@ -32,10 +33,12 @@ from app.schemas.finding import (
     Finding,
     ResearchResult,
 )
+
 from app.schemas.plan import (
     ResearchPlan,
     SubQuestion,
 )
+
 from app.schemas.report import ResearchReport
 from app.schemas.state import ResearchState
 from app.schemas.trace import (
@@ -63,6 +66,32 @@ WriterFn = Callable[
     [str, list[Finding]],
     ResearchReport,
 ]
+
+
+def _accepts_run_id(function: Callable) -> bool:
+    """
+    Check whether an agent accepts run_id.
+
+    Existing injected functions that do not
+    accept run_id remain compatible.
+    """
+
+    try:
+        parameters = inspect.signature(
+            function
+        ).parameters
+    except (TypeError, ValueError):
+        return False
+
+    parameter = parameters.get("run_id")
+
+    if parameter is None:
+        return False
+
+    return parameter.kind in (
+        inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        inspect.Parameter.KEYWORD_ONLY,
+    )
 
 
 def _get_tokens_safely(
@@ -264,14 +293,26 @@ def make_planner_node(
     into a structured research plan.
     """
 
+    accepts_run_id = _accepts_run_id(
+        planner_fn
+    )
+
     def planner_node(
         state: ResearchState,
     ) -> dict:
 
         def execute() -> dict:
-            plan = planner_fn(
-                state["question"]
-            )
+            run_id = state.get("run_id")
+
+            if accepts_run_id and run_id:
+                plan = planner_fn(
+                    state["question"],
+                    run_id=run_id,
+                )
+            else:
+                plan = planner_fn(
+                    state["question"]
+                )
 
             return {
                 "plan": plan.model_dump(
@@ -398,8 +439,7 @@ def make_researcher_node(
                 + 1
             )
 
-            # This is the key integration:
-            # run_researcher receives the
+            # The Researcher receives the
             # revised question when retrying.
             result = researcher_fn(
                 research_question
@@ -498,6 +538,10 @@ def make_writer_node(
     from the collected findings.
     """
 
+    accepts_run_id = _accepts_run_id(
+        writer_fn
+    )
+
     def writer_node(
         state: ResearchState,
     ) -> dict:
@@ -512,10 +556,19 @@ def make_writer_node(
                 ]
             ]
 
-            report = writer_fn(
-                state["question"],
-                findings,
-            )
+            run_id = state.get("run_id")
+
+            if accepts_run_id and run_id:
+                report = writer_fn(
+                    state["question"],
+                    findings,
+                    run_id=run_id,
+                )
+            else:
+                report = writer_fn(
+                    state["question"],
+                    findings,
+                )
 
             return {
                 "report": report.model_dump(

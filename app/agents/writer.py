@@ -1,13 +1,17 @@
 
 import json
 
+from collections import defaultdict
+
 from langchain_core.messages import (
     HumanMessage,
     SystemMessage,
 )
+
 from langchain_groq import ChatGroq
 
 from app.config import get_settings
+from app.persistence.token_tracker import GroqTokenTracker
 from app.schemas.report import ResearchReport
 
 
@@ -24,10 +28,6 @@ MAX_OUTPUT_TOKENS = 1400
 # --------------------------------------------------
 # Prepare compact findings
 # --------------------------------------------------
-
-
-from collections import defaultdict
-
 
 def prepare_findings_for_writer(
     findings,
@@ -123,7 +123,14 @@ def create_writer_llm() -> ChatGroq:
 def run_writer(
     question: str,
     findings: list,
+    run_id: str | None = None,
 ) -> ResearchReport:
+    """
+    Generate the final cited research report.
+
+    When run_id is provided, track Groq token
+    consumption in Redis for the current run.
+    """
 
     # Step 1: Reduce evidence size
     compact_findings = prepare_findings_for_writer(
@@ -194,11 +201,28 @@ Requirements:
         ResearchReport
     )
 
-    # Step 8: Call Groq
-    report = structured_llm.invoke([
+    messages = [
         SystemMessage(content=system_prompt),
         HumanMessage(content=user_prompt),
-    ])
+    ]
+
+    # Step 8: Call Groq and track tokens
+    if run_id:
+        tracker = GroqTokenTracker(
+            run_id=run_id,
+            agent="writer",
+        )
+
+        report = structured_llm.invoke(
+            messages,
+            config={
+                "callbacks": [tracker],
+            },
+        )
+    else:
+        report = structured_llm.invoke(
+            messages
+        )
 
     # Step 9: Validate referenced finding IDs
     allowed_ids = {

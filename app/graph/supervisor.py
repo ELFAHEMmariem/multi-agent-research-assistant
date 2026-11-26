@@ -95,10 +95,11 @@ def _supervisor_decision(
     review_failed: bool = False,
 ) -> dict:
     """
-    Apply routing rules.
+    Apply deterministic routing rules.
 
-    The LLM never directly controls
-    the LangGraph transitions.
+    A technical Reviewer failure must not
+    be treated as a recommendation to retry
+    an otherwise successful research pass.
     """
 
     # 1. Global budget checks
@@ -127,11 +128,8 @@ def _supervisor_decision(
         state["last_result_status"] == "success"
     )
 
-    # 3. Evaluate whether another pass is useful
+    # 3. Decide whether another pass is justified
     should_retry = not research_success
-
-    if review_failed:
-        should_retry = True
 
     if review is not None:
         should_retry = (
@@ -139,23 +137,47 @@ def _supervisor_decision(
             and review.retry_recommended
         )
 
-    # 4. Enforce retry limits in Python
+    # A technical review error does not justify
+    # repeating a successful research pass.
+    if review_failed and research_success:
+        should_retry = False
+
+    # 4. Enforce retry limits
     if should_retry and can_retry(
         state,
         question_id,
         limits,
     ):
-        revisions = dict(state["revisions"])
+        revisions = dict(
+            state.get("revisions") or {}
+        )
 
         revisions[question_id] = (
             revisions.get(question_id, 0) + 1
         )
 
-        return {
+        result = {
             "revisions": revisions,
             "next_action": "research",
             "status": "retrying",
         }
+
+        # Preserve feedback when a quality-based
+        # revision has been authorized.
+        if review is not None and review.feedback:
+            feedback_by_question = dict(
+                state.get("review_feedback") or {}
+            )
+
+            feedback_by_question[question_id] = (
+                review.feedback
+            )
+
+            result["review_feedback"] = (
+                feedback_by_question
+            )
+
+        return result
 
     # 5. Move to next sub-question
     next_index = index + 1
@@ -323,8 +345,6 @@ def supervisor_node(
                     )
 
             else:
-                # No evidence means the question
-                # cannot be considered answered.
                 review_failed = True
                 review_error = "NoFindings"
 

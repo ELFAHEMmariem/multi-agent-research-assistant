@@ -1,4 +1,5 @@
-﻿"""
+﻿
+"""
 Unit tests for the Groq research quality reviewer.
 
 These tests use a fake LLM.
@@ -118,7 +119,7 @@ def test_reviewer_accepts_good_research():
     assert result.approved is True
     assert result.retry_recommended is False
     assert fake_model.schema is ResearchReview
-    assert fake_model.method == "function_calling"
+    assert fake_model.method == "json_mode"
     assert "Zero Trust" in fake_model.prompt
 
 
